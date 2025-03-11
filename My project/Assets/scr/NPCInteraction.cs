@@ -1,16 +1,22 @@
 using UnityEngine;
 using TMPro;
 using System.Collections;
+using UnityEngine.UI; // Для работы с UI
 
 public class DialogueSystem : MonoBehaviour
 {
     public TextMeshProUGUI dialogueText;
     public TextMeshProUGUI answersText;
+    public GameObject dialogueBackground; // Фон для dialogueText
+    public GameObject answersBackground; // Фон для answersText
     public GameObject player;
     public float interactionDistance = 2f;
     public float textSpeed = 0.05f;
     public AudioSource talkSound;
     public ScaleAnimationTriggerScript scaleTrigger; // Ссылка на скрипт с масштабом
+    public GameObject npcPortraitUI; // Ссылка на UI Image портрета
+    private CanvasGroup portraitCanvasGroup; // Для управления прозрачностью
+    private Animator portraitAnimator; // Для анимации рта
 
     private bool isInRange = false;
     private bool isInDialogue = false;
@@ -28,6 +34,11 @@ public class DialogueSystem : MonoBehaviour
             Debug.LogError("DialogueText or AnswersText not assigned in Inspector!");
             return;
         }
+        if (dialogueBackground == null || answersBackground == null)
+        {
+            Debug.LogError("DialogueBackground or AnswersBackground not assigned in Inspector!");
+            return;
+        }
         if (player == null)
         {
             Debug.LogError("Player not assigned in Inspector!");
@@ -42,9 +53,28 @@ public class DialogueSystem : MonoBehaviour
         {
             Debug.LogError("ScaleAnimationTriggerScript not assigned in Inspector!");
         }
+        if (npcPortraitUI == null)
+        {
+            Debug.LogError("NPCPortraitUI not assigned in Inspector!");
+            return;
+        }
+
+        portraitCanvasGroup = npcPortraitUI.GetComponent<CanvasGroup>();
+        portraitAnimator = npcPortraitUI.GetComponent<Animator>();
+        if (portraitCanvasGroup == null)
+        {
+            Debug.LogError("CanvasGroup not found on NPCPortraitUI!");
+        }
+        if (portraitAnimator == null)
+        {
+            Debug.LogWarning("Animator not found on NPCPortraitUI! Animation will be skipped.");
+        }
 
         dialogueText.gameObject.SetActive(false);
         answersText.gameObject.SetActive(false);
+        dialogueBackground.SetActive(false); // Фон неактивен изначально
+        answersBackground.SetActive(false); // Фон неактивен изначально
+        npcPortraitUI.SetActive(false); // Портрет неактивен изначально
     }
 
     void Update()
@@ -87,6 +117,10 @@ public class DialogueSystem : MonoBehaviour
             {
                 talkSound.Stop();
             }
+            if (portraitAnimator != null)
+            {
+                portraitAnimator.SetBool("IsTalking", false); // Останавливаем анимацию рта
+            }
             if (currentStep == 1) ShowAnswers();
             else if (currentStep == 2) Invoke("EndDialogue", 2f);
         }
@@ -96,7 +130,11 @@ public class DialogueSystem : MonoBehaviour
     {
         isInDialogue = true;
         dialogueText.gameObject.SetActive(true);
+        dialogueBackground.SetActive(true); // Показываем фон
         answersText.gameObject.SetActive(false);
+        answersBackground.SetActive(false); // Скрываем фон ответов
+        npcPortraitUI.SetActive(true); // Показываем портрет
+        StartCoroutine(FadeInPortrait()); // Плавное появление
 
         // Останавливаем анимацию масштаба и скрываем объект
         if (scaleTrigger != null)
@@ -104,9 +142,30 @@ public class DialogueSystem : MonoBehaviour
             scaleTrigger.StopScalingAndHide();
         }
 
+        // Запускаем анимацию разговора, если Animator есть
+        if (portraitAnimator != null)
+        {
+            portraitAnimator.SetTrigger("StartTalking");
+            portraitAnimator.SetBool("IsTalking", true);
+        }
+
         string initialText = "Кто ты? Здесь опасно...";
         StartCoroutine(TypeText(initialText));
         currentStep = 1;
+    }
+
+    IEnumerator FadeInPortrait()
+    {
+        if (portraitCanvasGroup != null)
+        {
+            portraitCanvasGroup.alpha = 0f;
+            while (portraitCanvasGroup.alpha < 1f)
+            {
+                portraitCanvasGroup.alpha += Time.deltaTime;
+                yield return null;
+            }
+            portraitCanvasGroup.alpha = 1f;
+        }
     }
 
     void ShowAnswers()
@@ -114,6 +173,7 @@ public class DialogueSystem : MonoBehaviour
         if (!isInDialogue) return;
 
         answersText.gameObject.SetActive(true);
+        answersBackground.SetActive(true); // Показываем фон ответов
         answers[0] = "Я заблудился. Помоги мне!";
         answers[1] = "Я ищу выход. Ты знаешь, где он?";
         answers[2] = "Мне всё равно, уйди с дороги!";
@@ -132,6 +192,12 @@ public class DialogueSystem : MonoBehaviour
 
         isWaitingForAnswer = false;
         answersText.gameObject.SetActive(false);
+        answersBackground.SetActive(false); // Скрываем фон ответов
+        if (portraitAnimator != null)
+        {
+            portraitAnimator.SetTrigger("StartTalking");
+            portraitAnimator.SetBool("IsTalking", true); // Запускаем анимацию снова для ответа
+        }
         StartCoroutine(TypeText(responses[choice]));
     }
 
@@ -159,6 +225,11 @@ public class DialogueSystem : MonoBehaviour
 
         isTyping = false;
 
+        if (portraitAnimator != null)
+        {
+            portraitAnimator.SetBool("IsTalking", false); // Останавливаем анимацию рта после текста
+        }
+
         if (currentStep == 1)
         {
             Invoke("ShowAnswers", 0.5f);
@@ -177,12 +248,20 @@ public class DialogueSystem : MonoBehaviour
         isTyping = false;
         dialogueText.gameObject.SetActive(false);
         answersText.gameObject.SetActive(false);
+        dialogueBackground.SetActive(false); // Скрываем фон
+        answersBackground.SetActive(false); // Скрываем фон
+        npcPortraitUI.SetActive(false); // Скрываем портрет
         currentStep = 0;
         StopAllCoroutines();
 
         if (talkSound != null && talkSound.isPlaying)
         {
             talkSound.Stop();
+        }
+
+        if (portraitAnimator != null)
+        {
+            portraitAnimator.SetBool("IsTalking", false); // Останавливаем анимацию при завершении
         }
     }
 }
